@@ -1,0 +1,148 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Universal Icon Generator</title>
+    <!-- Robust CDN Links -->
+    <script src="https://jsdelivr.net"></script>
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 20px; background: #f8fafc; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        .btn { background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 1rem; }
+        .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        #status { margin-top: 1rem; font-weight: 500; min-height: 1.5em; }
+        pre { background: #1e293b; color: #f8fafc; padding: 1rem; border-radius: 8px; text-align: left; overflow-x: auto; font-size: 13px; margin-top: 1rem; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+
+<div class="card">
+    <h1>Icon Generator</h1>
+    <p>Upload <b>any file</b> (ICO, PNG, JPG) to create your kit.</p>
+    <!-- Removed 'accept' restrictions to force file selection capability -->
+    <input type="file" id="fileInput">
+    <br>
+    <button id="generateBtn" class="btn" disabled>Generate Icon Kit</button>
+    <div id="status">Waiting for library...</div>
+</div>
+
+
+<div id="output" class="hidden">
+    <button id="downloadBtn" class="btn" style="background: #16a34a; width: 100%;">Download ZIP Package</button>
+    <h3>1. Copy to &lt;head&gt;</h3>
+    <pre id="htmlCode"></pre>
+    <h3>2. site.webmanifest</h3>
+    <pre id="manifestCode"></pre>
+</div>
+
+
+<canvas id="tempCanvas" class="hidden"></canvas>
+
+
+<script>
+    // Ensure libraries are ready
+    window.onload = () => {
+        const checkLibs = setInterval(() => {
+            if (window.JSZip && window.ICO) {
+                clearInterval(checkLibs);
+                document.getElementById('status').textContent = "Ready to process!";
+                document.getElementById('fileInput').onchange = (e) => {
+                    document.getElementById('generateBtn').disabled = !e.target.files.length;
+                };
+            }
+        }, 100);
+    };
+
+
+    document.getElementById('generateBtn').onclick = async () => {
+        const file = document.getElementById('fileInput').files[0];
+        const status = document.getElementById('status');
+        const generateBtn = document.getElementById('generateBtn');
+        
+        status.textContent = "Unpacking...";
+        generateBtn.disabled = true;
+
+
+        try {
+            const buffer = await file.arrayBuffer();
+            let sourceImg;
+
+
+            // Decode ICO or standard image
+            if (file.name.toLowerCase().endsWith('.ico')) {
+                const images = await ICO.parseICO(buffer);
+                const best = images.sort((a, b) => b.width - a.width)[0];
+                const blob = new Blob([best.buffer], { type: 'image/png' });
+                sourceImg = await createImageBitmap(blob);
+            } else {
+                const blob = new Blob([buffer], { type: file.type });
+                sourceImg = await createImageBitmap(blob);
+            }
+
+
+            const zip = new JSZip();
+            const canvas = document.getElementById('tempCanvas');
+            const ctx = canvas.getContext('2d');
+            const sizes = [
+                { n: 'favicon-16x16.png', s: 16 },
+                { n: 'favicon-32x32.png', s: 32 },
+                { n: 'apple-touch-icon.png', s: 180 },
+                { n: 'android-chrome-192x192.png', s: 192 },
+                { n: 'android-chrome-512x512.png', s: 512 },
+                { n: 'favicon.ico', s: 48 }
+            ];
+
+
+            for (const item of sizes) {
+                canvas.width = item.s;
+                canvas.height = item.s;
+                ctx.clearRect(0, 0, item.s, item.s);
+                ctx.drawImage(sourceImg, 0, 0, item.s, item.s);
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                zip.file(item.n, blob);
+            }
+
+
+            const manifest = {
+                name: "My Site",
+                icons: [
+                    { src: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png" },
+                    { src: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png" }
+                ],
+                theme_color: "#ffffff",
+                display: "standalone"
+            };
+
+
+            zip.file("site.webmanifest", JSON.stringify(manifest, null, 2));
+            
+            const html = `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">\n<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">\n<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">\n<link rel="manifest" href="/site.webmanifest">\n<link rel="shortcut icon" href="/favicon.ico">`;
+
+
+            document.getElementById('htmlCode').textContent = html;
+            document.getElementById('manifestCode').textContent = JSON.stringify(manifest, null, 2);
+            document.getElementById('output').classList.remove('hidden');
+            status.textContent = "Done! Package ready.";
+            generateBtn.disabled = false;
+
+
+            document.getElementById('downloadBtn').onclick = async () => {
+                const blob = await zip.generateAsync({type: "blob"});
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = "favicon-kit.zip";
+                a.click();
+            };
+
+
+        } catch (err) {
+            status.textContent = "Error: " + err.message;
+            generateBtn.disabled = false;
+        }
+    };
+</script>
+</body>
+</html>
